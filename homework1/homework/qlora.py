@@ -1,3 +1,4 @@
+from email.mime import base
 from pathlib import Path
 
 import torch
@@ -18,29 +19,45 @@ class QLoRALinear(Linear4Bit):
         super().__init__(in_features, out_features, bias, group_size)
         self.requires_grad_(False)
 
-        # TODO: Implement LoRA, initialize the layers, and make sure they are trainable
-        # Keep the LoRA layers in float32
-        raise NotImplementedError()
+        self.lora_a = torch.nn.Linear(in_features, lora_dim, bias=False)
+        self.lora_b = torch.nn.Linear(lora_dim, out_features, bias=False)
+        torch.nn.init.zeros_(self.lora_b.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: Forward. Make sure to cast inputs to self.linear_dtype and the output back to x.dtype
-        raise NotImplementedError()
+        base = super().forward(x)
+        return base + self.lora_b(self.lora_a(x))
 
 
 class QLoRABigNet(torch.nn.Module):
     class Block(torch.nn.Module):
         def __init__(self, channels, lora_dim, group_size):
             super().__init__()
-            # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-            raise NotImplementedError()
+            self.model = torch.nn.Sequential(
+                QLoRALinear(channels, channels, lora_dim, group_size),
+                torch.nn.ReLU(),
+                QLoRALinear(channels, channels, lora_dim, group_size),
+                torch.nn.ReLU(),
+                QLoRALinear(channels, channels, lora_dim, group_size),
+            )
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             return self.model(x) + x
 
     def __init__(self, lora_dim: int = 32, group_size: int = 16):
         super().__init__()
-        # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-        raise NotImplementedError()
+        self.model = torch.nn.Sequential(
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM, lora_dim, group_size),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
