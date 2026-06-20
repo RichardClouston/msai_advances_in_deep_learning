@@ -38,19 +38,18 @@ class HalfBigNet(torch.nn.Module):
         def __init__(self, channels: int):
             super().__init__()
             self.model = torch.nn.Sequential(
-            HalfLinear(channels, channels),
-            torch.nn.ReLU(),
-            HalfLinear(channels, channels),
-            torch.nn.ReLU(),
-            HalfLinear(channels, channels),
-        )
+                HalfLinear(channels, channels),
+                torch.nn.ReLU(),
+                HalfLinear(channels, channels),
+                torch.nn.ReLU(),
+                HalfLinear(channels, channels),
+            )
 
         def forward(self, x: torch.Tensor):
             return self.model(x) + x
 
     def __init__(self):
         super().__init__()
-        
         self.model = torch.nn.Sequential(
             self.Block(BIGNET_DIM),
             LayerNorm(BIGNET_DIM),
