@@ -1,10 +1,9 @@
-from email.mime import base
 from pathlib import Path
 
 import torch
 
 from .bignet import BIGNET_DIM, LayerNorm  # noqa: F401
-from .low_precision import Linear4Bit
+from .low_precision import Linear4Bit, block_dequantize_4bit
 
 
 class QLoRALinear(Linear4Bit):
@@ -24,7 +23,9 @@ class QLoRALinear(Linear4Bit):
         torch.nn.init.zeros_(self.lora_b.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        base = super().forward(x)
+        with torch.no_grad():
+            weight = block_dequantize_4bit(self.weight_q4, self.weight_norm).view(self._shape)
+        base = torch.nn.functional.linear(x, weight, self.bias)
         return base + self.lora_b(self.lora_a(x))
 
 
