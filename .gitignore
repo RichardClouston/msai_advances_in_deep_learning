@@ -16,4 +16,9 @@ venv/
 .idea/
 .vscode/
 
+*.pth
 *.zip
+logs/
+checkpoints/
+data/
+
