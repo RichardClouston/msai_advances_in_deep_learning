@@ -99,38 +99,41 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
 
     Hint: Convolutions work well enough, no need to use a transformer unless you really want.
     Hint: See PatchifyLinear and UnpatchifyLinear for how to use convolutions with the input and
-          output dimensions given.
+        output dimensions given.
     Hint: You can get away with 3 layers or less.
     Hint: Many architectures work here (even just a PatchifyLinear / UnpatchifyLinear).
-          However, later parts of the assignment require both non-linearities (i.e. GeLU) and
-          interactions (i.e. convolutions) between patches.
+        However, later parts of the assignment require both non-linearities (i.e. GeLU) and
+        interactions (i.e. convolutions) between patches.
     """
 
     class PatchEncoder(torch.nn.Module):
         """
         (Optionally) Use this class to implement an encoder.
-                     It can make later parts of the homework easier (reusable components).
+            It can make later parts of the homework easier (reusable components).
         """
 
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
             super().__init__()
             self.patch_conv = torch.nn.Conv2d(3, latent_dim, patch_size, patch_size, bias=False)
-            self.act = torch.nn.GELU()
+            self.act1 = torch.nn.GELU()
+            self.conv2 = torch.nn.Conv2d(latent_dim, latent_dim, 3, padding=1)
+            self.act2 = torch.nn.GELU()
             self.proj = torch.nn.Conv2d(latent_dim, bottleneck, 1)
 
-
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return chw_to_hwc(self.proj(self.act(self.patch_conv(hwc_to_chw(x)))))
+            return chw_to_hwc(self.proj(self.act2(self.conv2(self.act1(self.patch_conv(hwc_to_chw(x)))))))
 
     class PatchDecoder(torch.nn.Module):
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
             super().__init__()
             self.proj = torch.nn.Conv2d(bottleneck, latent_dim, 1)
-            self.act = torch.nn.GELU()
+            self.act1 = torch.nn.GELU()
+            self.conv2 = torch.nn.Conv2d(latent_dim, latent_dim, 3, padding=1)
+            self.act2 = torch.nn.GELU()
             self.unpatch_conv = torch.nn.ConvTranspose2d(latent_dim, 3, patch_size, patch_size, bias=False)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return chw_to_hwc(self.unpatch_conv(self.act(self.proj(hwc_to_chw(x)))))
+            return chw_to_hwc(self.unpatch_conv(self.act2(self.conv2(self.act1(self.proj(hwc_to_chw(x)))))))
 
     def __init__(self, patch_size: int = 25, latent_dim: int = 128, bottleneck: int = 128):
         super().__init__()
