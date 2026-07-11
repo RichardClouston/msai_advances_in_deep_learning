@@ -43,7 +43,14 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.decode
 
         """
-        return self.batched_generate([prompt])[0]
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        outputs = self.model.generate(
+            **inputs,
+            max_new_tokens=50,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+        generated_tokens = outputs[0, inputs["input_ids"].shape[1]:]
+        return self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
     @overload
     def batched_generate(
@@ -77,18 +84,18 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.batch_decode
 
         Tip: You need to set self.tokenizer.padding_side = "left" to get the correct padding behavior for generation.
-             Left padding makes sure all sequences are aligned to the right (i.e. where tokens are generated).
+            Left padding makes sure all sequences are aligned to the right (i.e. where tokens are generated).
         Tip: self.model.generate takes a lot of parameters. Here are some relevant ones:
             - max_new_tokens: The maximum number of tokens to generate. Set this to a reasonable value
-                              (50 should suffice).
+                (50 should suffice).
             - do_sample and temperature: For any temperature > 0, set do_sample=True.
-                                         do_sample=False will use greedy decoding.
+                do_sample=False will use greedy decoding.
             - num_return_sequences: The number of sequences to return. Note that this will generate a flat
-                                    list of len(prompts) * num_return_sequences entries.
+                list of len(prompts) * num_return_sequences entries.
             - eos_token_id: The end of sequence token id. This is used to stop generation. Set this
-                            to self.tokenizer.eos_token_id.
+                to self.tokenizer.eos_token_id.
         Pro Tip: Only batch_decode generated tokens by masking out the inputs with
-                 outputs[:, len(inputs["input_ids"][0]) :]
+            outputs[:, len(inputs["input_ids"][0]) :]
         """
         from tqdm import tqdm  # Importing tqdm for progress bar
 
