@@ -1,6 +1,7 @@
 from .base_llm import BaseLLM
 from .data import Dataset, benchmark
-
+from peft import LoraConfig, get_peft_model
+from transformers import Trainer, TrainingArguments
 
 def load() -> BaseLLM:
     from pathlib import Path
@@ -45,11 +46,14 @@ def tokenize(tokenizer, question: str, answer: str):
     return full
 
 
-def format_example(prompt: str, answer: str) -> dict[str, str]:
+def format_example(prompt: str, answer: float) -> dict[str, str]:
     """
     Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
     """
-    raise NotImplementedError()
+    return {
+        "question": prompt,
+        "answer": f"<answer>{round(answer, 3)}</answer>",
+    }
 
 
 class TokenizedDataset:
@@ -59,8 +63,8 @@ class TokenizedDataset:
         - BaseLLM.tokenizer
         - Dataset
         - format_fn which converts a data element into a dict with entries
-          - question: str
-          - answer: str
+            - question: str
+            - answer: str
         """
         self.format_fn = format_fn
         self.tokenizer = tokenizer
@@ -78,7 +82,40 @@ def train_model(
     output_dir: str,
     **kwargs,
 ):
-    raise NotImplementedError()
+    llm = BaseLLM()
+
+    lora_config = LoraConfig(
+        target_modules="all-linear",
+        bias="none",
+        task_type="CAUSAL_LM",
+        r=8,
+        lora_alpha=32,
+    )
+    model = get_peft_model(llm.model, lora_config)
+    model.enable_input_require_grads()
+
+    train_dataset = TokenizedDataset(llm.tokenizer, Dataset("train"), format_example)
+
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        logging_dir=output_dir,
+        report_to="tensorboard",
+        gradient_checkpointing=True,
+        per_device_train_batch_size=32,
+        num_train_epochs=5,
+        learning_rate=2e-4,
+        save_strategy="no",
+        logging_steps=10,
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+    )
+
+    trainer.train()
+    trainer.save_model(output_dir)
     test_model(output_dir)
 
 
