@@ -3,6 +3,7 @@ from .data import Dataset, benchmark
 from peft import LoraConfig, get_peft_model
 from transformers import Trainer, TrainingArguments
 
+
 def load() -> BaseLLM:
     from pathlib import Path
 
@@ -120,7 +121,7 @@ def train_model(
 
 
 def test_model(ckpt_path: str):
-    testset = Dataset("valid")
+    test_set = Dataset("valid")
     llm = BaseLLM()
 
     # Load the model with LoRA adapters
@@ -128,7 +129,7 @@ def test_model(ckpt_path: str):
 
     llm.model = PeftModel.from_pretrained(llm.model, ckpt_path).to(llm.device)
 
-    benchmark_result = benchmark(llm, testset, 100)
+    benchmark_result = benchmark(llm, test_set, 100)
     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
 
 

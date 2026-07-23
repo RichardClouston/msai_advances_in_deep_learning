@@ -3,6 +3,7 @@ from typing import overload
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+
 checkpoint = "HuggingFaceTB/SmolLM2-360M-Instruct"
 
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -145,14 +146,14 @@ def test_model():
     # The following code simply tests of the BaseLLM is able to complete text.
     # It should produce garbage answers, but it should not crash.
     # In my case it talks about cats eating cats, and dogs being happy.
-    testset = ["The cat went up", "The dog went down"]
+    test_set = ["The cat went up", "The dog went down"]
     model = BaseLLM()
-    for t in testset:
+    for t in test_set:
         print("testing generate function")
         print("input", t)
         answer = model.generate(t)
         print("output", answer)
-    answers = model.batched_generate(testset)
+    answers = model.batched_generate(test_set)
     print(answers)
 
 

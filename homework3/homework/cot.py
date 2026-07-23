@@ -44,9 +44,9 @@ def load() -> CoTModel:
 def test_model():
     from .data import Dataset, benchmark
 
-    testset = Dataset("valid")
+    test_set = Dataset("valid")
     model = CoTModel()
-    benchmark_result = benchmark(model, testset, 100)
+    benchmark_result = benchmark(model, test_set, 100)
     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
 
 
