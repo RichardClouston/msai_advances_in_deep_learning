@@ -44,14 +44,7 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.decode
 
         """
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-        outputs = self.model.generate(
-            **inputs,
-            max_new_tokens=50,
-            eos_token_id=self.tokenizer.eos_token_id,
-        )
-        generated_tokens = outputs[0, inputs["input_ids"].shape[1]:]
-        return self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        return self.batched_generate([prompt])[0]
 
     @overload
     def batched_generate(

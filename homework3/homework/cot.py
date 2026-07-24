@@ -12,20 +12,33 @@ class CoTModel(BaseLLM):
             {
                 "role": "system",
                 "content": (
-                    "You are a helpful assistant that converts units. "
-                    "State the equivalence between the units, then apply it. "
-                    "Be concise: one short sentence of reasoning, then the final "
-                    "numeric result wrapped in <answer></answer> tags. "
-                    "Do not add anything after the closing tag."
-                    ),
+                    "You are a unit-conversion assistant. Use the correct conversion "
+                    "factor, calculate carefully, and be concise. Give one short "
+                    "equation followed by exactly one final numeric answer in "
+                    "<answer></answer> tags. Do not omit the tags and do not write "
+                    "anything after </answer>."
+                ),
             },
             {
                 "role": "user",
-                "content": "How many minutes are in 3 hours?",
+                "content": "How many gram are there per 3 kg?",
             },
             {
                 "role": "assistant",
-                "content": "There are 60 minutes in 1 hour. 3 hours * 60 = <answer>180</answer>",
+                "content": (
+                    "1 kg = 1000 grams. 3 * 1000 = <answer>3000</answer>"
+                ),
+            },
+            {
+                "role": "user",
+                "content": "How much is 3 mi/h when converted to m/s?",
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "1 mi/h = 0.44704 m/s. 3 * 0.44704 = "
+                    "<answer>1.34112</answer>"
+                ),
             },
             {
                 "role": "user",
