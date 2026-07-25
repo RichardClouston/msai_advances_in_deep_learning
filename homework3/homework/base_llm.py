@@ -3,6 +3,7 @@ from typing import overload
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+
 checkpoint = "HuggingFaceTB/SmolLM2-360M-Instruct"
 
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -77,18 +78,18 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.batch_decode
 
         Tip: You need to set self.tokenizer.padding_side = "left" to get the correct padding behavior for generation.
-             Left padding makes sure all sequences are aligned to the right (i.e. where tokens are generated).
+            Left padding makes sure all sequences are aligned to the right (i.e. where tokens are generated).
         Tip: self.model.generate takes a lot of parameters. Here are some relevant ones:
             - max_new_tokens: The maximum number of tokens to generate. Set this to a reasonable value
-                              (50 should suffice).
+                (50 should suffice).
             - do_sample and temperature: For any temperature > 0, set do_sample=True.
-                                         do_sample=False will use greedy decoding.
+                do_sample=False will use greedy decoding.
             - num_return_sequences: The number of sequences to return. Note that this will generate a flat
-                                    list of len(prompts) * num_return_sequences entries.
+                list of len(prompts) * num_return_sequences entries.
             - eos_token_id: The end of sequence token id. This is used to stop generation. Set this
-                            to self.tokenizer.eos_token_id.
+                to self.tokenizer.eos_token_id.
         Pro Tip: Only batch_decode generated tokens by masking out the inputs with
-                 outputs[:, len(inputs["input_ids"][0]) :]
+            outputs[:, len(inputs["input_ids"][0]) :]
         """
         from tqdm import tqdm  # Importing tqdm for progress bar
 
@@ -105,7 +106,24 @@ class BaseLLM:
                 for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
             ]
 
-        raise NotImplementedError()
+        self.tokenizer.padding_side = "left"
+        inputs = self.tokenizer(prompts, padding=True, return_tensors="pt").to(self.device)
+        outputs = self.model.generate(
+            **inputs,
+            max_new_tokens=50,
+            do_sample=temperature > 0,
+            temperature=temperature if temperature > 0 else None,
+            num_return_sequences=num_return_sequences or 1,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+        generated_tokens = outputs[:, inputs["input_ids"].shape[1]:]
+        decoded = self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+        if num_return_sequences is None:
+            return decoded
+        return [
+            decoded[i * num_return_sequences:(i + 1) * num_return_sequences]
+            for i in range(len(prompts))
+        ]
 
     def answer(self, *questions) -> list[float]:
         """
@@ -121,14 +139,14 @@ def test_model():
     # The following code simply tests of the BaseLLM is able to complete text.
     # It should produce garbage answers, but it should not crash.
     # In my case it talks about cats eating cats, and dogs being happy.
-    testset = ["The cat went up", "The dog went down"]
+    test_set = ["The cat went up", "The dog went down"]
     model = BaseLLM()
-    for t in testset:
+    for t in test_set:
         print("testing generate function")
         print("input", t)
         answer = model.generate(t)
         print("output", answer)
-    answers = model.batched_generate(testset)
+    answers = model.batched_generate(test_set)
     print(answers)
 
 

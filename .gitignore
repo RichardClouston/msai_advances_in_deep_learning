@@ -22,3 +22,7 @@ logs/
 checkpoints/
 data/
 
+**/sft_model/
+**/rft_model/
+**/checkpoint-*/
+**/events.out.tfevents.*
