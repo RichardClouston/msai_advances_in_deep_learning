@@ -103,7 +103,7 @@ def train_model(
         report_to="tensorboard",
         gradient_checkpointing=True,
         per_device_train_batch_size=32,
-        num_train_epochs=5,
+        num_train_epochs=10,
         learning_rate=2e-4,
         save_strategy="no",
         logging_steps=10,
