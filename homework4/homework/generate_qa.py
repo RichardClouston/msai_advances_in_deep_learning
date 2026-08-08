@@ -152,7 +152,53 @@ def extract_kart_objects(
         - is_center_kart: Boolean indicating if this is the kart closest to image center
     """
 
-    raise NotImplementedError("Not implemented")
+    with open(info_path) as f:
+        info = json.load(f)
+
+    karts = info["karts"]
+    detections = info["detections"][view_index]
+
+    scale_x = img_width / ORIGINAL_WIDTH
+    scale_y = img_height / ORIGINAL_HEIGHT
+
+    kart_objects = []
+
+    for detection in detections:
+        class_id, track_id, x1, y1, x2, y2 = detection
+        class_id = int(class_id)
+        track_id = int(track_id)
+
+        # Only class 1 represents karts.
+        if class_id != 1:
+            continue
+
+        # The track ID indexes into info["karts"].
+        if not 0 <= track_id < len(karts):
+            continue
+
+        # Ignore boxes entirely outside the original 600 x 400 image.
+        if x2 <= 0 or x1 >= ORIGINAL_WIDTH or y2 <= 0 or y1 >= ORIGINAL_HEIGHT:
+            continue
+
+        x1_scaled = x1 * scale_x
+        y1_scaled = y1 * scale_y
+        x2_scaled = x2 * scale_x
+        y2_scaled = y2 * scale_y
+
+        kart_objects.append(
+            {
+                "instance_id": track_id,
+                "kart_name": karts[track_id],
+                "center": (
+                    (x1_scaled + x2_scaled) / 2,
+                    (y1_scaled + y2_scaled) / 2,
+                ),
+                # The camera view index identifies the ego kart.
+                "is_center_kart": track_id == view_index,
+            }
+        )
+
+    return kart_objects
 
 
 def extract_track_info(info_path: str) -> str:
@@ -166,7 +212,10 @@ def extract_track_info(info_path: str) -> str:
         Track name as a string
     """
 
-    raise NotImplementedError("Not implemented")
+    with open(info_path) as f:
+        info = json.load(f)
+
+    return info["track"]
 
 
 def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img_height: int = 100) -> list:
@@ -202,7 +251,99 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     # How many karts are in front of the ego car?
     # How many karts are behind the ego car?
 
-    raise NotImplementedError("Not implemented")
+    with open(info_path) as f:
+        info = json.load(f)
+
+    ego_name = info["karts"][view_index]
+    track_name = extract_track_info(info_path)
+    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+
+    qa_pairs = [
+        {
+            "question": "What kart is the ego car?",
+            "answer": ego_name,
+        },
+        {
+            "question": "How many karts are there in the scenario?",
+            "answer": str(len(karts)),
+        },
+        {
+            "question": "What track is this?",
+            "answer": track_name,
+        },
+    ]
+
+    ego_kart = next((kart for kart in karts if kart["is_center_kart"]), None)
+
+    # If the ego kart is not visible, identity/track/count labels are still
+    # valid, but relative-position labels are not.
+    if ego_kart is None:
+        return qa_pairs
+
+    ego_x, ego_y = ego_kart["center"]
+    other_karts = [kart for kart in karts if not kart["is_center_kart"]]
+
+    left_count = 0
+    right_count = 0
+    front_count = 0
+    back_count = 0
+
+    for kart in other_karts:
+        kart_x, kart_y = kart["center"]
+        name = kart["kart_name"]
+
+        horizontal = "left" if kart_x < ego_x else "right"
+        vertical = "front" if kart_y < ego_y else "back"
+
+        qa_pairs.extend(
+            [
+                {
+                    "question": f"Is {name} to the left or right of the ego car?",
+                    "answer": horizontal,
+                },
+                {
+                    "question": f"Is {name} in front of or behind the ego car?",
+                    "answer": vertical,
+                },
+                {
+                    "question": f"Where is {name} relative to the ego car?",
+                    "answer": f"{vertical} and {horizontal}",
+                },
+            ]
+        )
+
+        if horizontal == "left":
+            left_count += 1
+        else:
+            right_count += 1
+
+        if vertical == "front":
+            front_count += 1
+        else:
+            back_count += 1
+
+    qa_pairs.extend(
+        [
+            {
+                "question": "How many karts are to the left of the ego car?",
+                "answer": str(left_count),
+            },
+            {
+                "question": "How many karts are to the right of the ego car?",
+                "answer": str(right_count),
+            },
+            {
+                "question": "How many karts are in front of the ego car?",
+                "answer": str(front_count),
+            },
+            {
+                "question": "How many karts are behind the ego car?",
+                "answer": str(back_count),
+            },
+        ]
+    )
+
+    return qa_pairs
 
 
 def check_qa_pairs(info_file: str, view_index: int):
@@ -240,16 +381,72 @@ def check_qa_pairs(info_file: str, view_index: int):
         print("-" * 50)
 
 
+def generate_dataset(
+    output_json: str,
+    data_dir: str = "data",
+    split: str = "train",
+):
+    """
+    Generate QA pairs for all images in the training split.
+
+    output_json: Path of the JSON file to create.
+    data_dir: Root directory containing train/ and valid/.
+    split: Dataset split to process. Training is the only permitted value.
+    """
+    if split != "train":
+        raise ValueError("Generate labels only for the training split.")
+
+    split_dir = Path(data_dir) / split
+    info_files = sorted(split_dir.glob("*_info.json"))
+
+    all_qa_pairs = []
+
+    for info_path in info_files:
+        with open(info_path) as f:
+            info = json.load(f)
+
+        frame_name = info_path.stem.replace("_info", "")
+
+        for view_index in range(len(info["detections"])):
+            image_name = f"{frame_name}_{view_index:02d}_im.jpg"
+            image_path = split_dir / image_name
+
+            if not image_path.exists():
+                continue
+
+            view_qa_pairs = generate_qa_pairs(str(info_path), view_index)
+
+            for qa_pair in view_qa_pairs:
+                all_qa_pairs.append(
+                    {
+                        **qa_pair,
+                        "image_file": f"{split}/{image_name}",
+                    }
+                )
+
+    output_path = Path(output_json)
+
+    with open(output_path, "w") as f:
+        json.dump(all_qa_pairs, f)
+
+    print(f"Wrote {len(all_qa_pairs)} QA pairs to {output_path}")
+
+
 """
 Usage Example: Visualize QA pairs for a specific file and view:
-   python generate_qa.py check --info_file ../data/valid/00000_info.json --view_index 0
+    python generate_qa.py check --info_file ../data/valid/00000_info.json --view_index 0
 
 You probably need to add additional commands to Fire below.
 """
 
 
 def main():
-    fire.Fire({"check": check_qa_pairs})
+    fire.Fire(
+        {
+            "check": check_qa_pairs,
+            "generate": generate_dataset,
+        }
+    )
 
 
 if __name__ == "__main__":
