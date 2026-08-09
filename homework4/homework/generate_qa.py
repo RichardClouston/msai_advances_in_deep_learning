@@ -154,36 +154,29 @@ def extract_kart_objects(
 
     with open(info_path) as f:
         info = json.load(f)
-
     karts = info["karts"]
     detections = info["detections"][view_index]
-
     scale_x = img_width / ORIGINAL_WIDTH
     scale_y = img_height / ORIGINAL_HEIGHT
-
     kart_objects = []
 
     for detection in detections:
         class_id, track_id, x1, y1, x2, y2 = detection
         class_id = int(class_id)
         track_id = int(track_id)
-
-        # Only class 1 represents karts.
         if class_id != 1:
             continue
-
-        # The track ID indexes into info["karts"].
         if not 0 <= track_id < len(karts):
             continue
 
-        # Ignore boxes entirely outside the original 600 x 400 image.
-        if x2 <= 0 or x1 >= ORIGINAL_WIDTH or y2 <= 0 or y1 >= ORIGINAL_HEIGHT:
+        x1_scaled = int(x1 * scale_x)
+        y1_scaled = int(y1 * scale_y)
+        x2_scaled = int(x2 * scale_x)
+        y2_scaled = int(y2 * scale_y)
+        if x2_scaled < 0 or x1_scaled > img_width or y2_scaled < 0 or y1_scaled > img_height:
             continue
-
-        x1_scaled = x1 * scale_x
-        y1_scaled = y1 * scale_y
-        x2_scaled = x2 * scale_x
-        y2_scaled = y2 * scale_y
+        if (x2_scaled - x1_scaled) < min_box_size or (y2_scaled - y1_scaled) < min_box_size:
+            continue
 
         kart_objects.append(
             {
@@ -193,10 +186,21 @@ def extract_kart_objects(
                     (x1_scaled + x2_scaled) / 2,
                     (y1_scaled + y2_scaled) / 2,
                 ),
-                # The camera view index identifies the ego kart.
-                "is_center_kart": track_id == view_index,
+                "is_center_kart": False,
             }
         )
+
+    if kart_objects:
+        image_center_x = img_width / 2
+        image_center_y = img_height / 2
+        ego_kart = min(
+            kart_objects,
+            key=lambda kart: (
+                (kart["center"][0] - image_center_x) ** 2
+                + (kart["center"][1] - image_center_y) ** 2
+            ),
+        )
+        ego_kart["is_center_kart"] = True
 
     return kart_objects
 
@@ -251,13 +255,21 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     # How many karts are in front of the ego car?
     # How many karts are behind the ego car?
 
-    with open(info_path) as f:
-        info = json.load(f)
-
-    ego_name = info["karts"][view_index]
     track_name = extract_track_info(info_path)
     karts = extract_kart_objects(info_path, view_index, img_width, img_height)
-
+    ego_kart = next((kart for kart in karts if kart["is_center_kart"]), None)
+    if ego_kart is None:
+        return [
+            {
+                "question": "How many karts are there in the scenario?",
+                "answer": str(len(karts)),
+            },
+            {
+                "question": "What track is this?",
+                "answer": track_name,
+            },
+        ]
+    ego_name = ego_kart["kart_name"]
     qa_pairs = [
         {
             "question": "What kart is the ego car?",
@@ -272,14 +284,6 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
             "answer": track_name,
         },
     ]
-
-    ego_kart = next((kart for kart in karts if kart["is_center_kart"]), None)
-
-    # If the ego kart is not visible, identity/track/count labels are still
-    # valid, but relative-position labels are not.
-    if ego_kart is None:
-        return qa_pairs
-
     ego_x, ego_y = ego_kart["center"]
     other_karts = [kart for kart in karts if not kart["is_center_kart"]]
 
@@ -287,14 +291,11 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     right_count = 0
     front_count = 0
     back_count = 0
-
     for kart in other_karts:
         kart_x, kart_y = kart["center"]
         name = kart["kart_name"]
-
         horizontal = "left" if kart_x < ego_x else "right"
         vertical = "front" if kart_y < ego_y else "back"
-
         qa_pairs.extend(
             [
                 {
@@ -311,17 +312,14 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
                 },
             ]
         )
-
         if horizontal == "left":
             left_count += 1
         else:
             right_count += 1
-
         if vertical == "front":
             front_count += 1
         else:
             back_count += 1
-
     qa_pairs.extend(
         [
             {
@@ -342,7 +340,6 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
             },
         ]
     )
-
     return qa_pairs
 
 
@@ -400,22 +397,18 @@ def generate_dataset(
     info_files = sorted(split_dir.glob("*_info.json"))
 
     all_qa_pairs = []
-
     for info_path in info_files:
         with open(info_path) as f:
             info = json.load(f)
 
         frame_name = info_path.stem.replace("_info", "")
-
         for view_index in range(len(info["detections"])):
             image_name = f"{frame_name}_{view_index:02d}_im.jpg"
             image_path = split_dir / image_name
-
             if not image_path.exists():
                 continue
 
             view_qa_pairs = generate_qa_pairs(str(info_path), view_index)
-
             for qa_pair in view_qa_pairs:
                 all_qa_pairs.append(
                     {
@@ -425,10 +418,8 @@ def generate_dataset(
                 )
 
     output_path = Path(output_json)
-
     with open(output_path, "w") as f:
         json.dump(all_qa_pairs, f)
-
     print(f"Wrote {len(all_qa_pairs)} QA pairs to {output_path}")
 
 
