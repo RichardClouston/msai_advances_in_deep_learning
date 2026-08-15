@@ -1,8 +1,10 @@
 from pathlib import Path
 from typing import Any
 
+import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision as tv
 from peft import LoraConfig, TaskType, get_peft_model
 from PIL import Image
@@ -101,8 +103,12 @@ class CLIP(nn.Module):
         super().__init__()
         self.vision_encoder = vision_encoder
         self.text_encoder = text_encoder
-        # TODO: implement the rest components
-        raise NotImplementedError("Not implemented")
+
+        vision_hidden_size = self.vision_encoder.config.hidden_size
+        text_hidden_size = self.text_encoder.config.hidden_size
+        self.vision_projection = nn.Linear(vision_hidden_size, proj_dim, bias=False)
+        self.text_projection = nn.Linear(text_hidden_size, proj_dim, bias=False)
+        self.logit_scale = nn.Parameter(torch.tensor(math.log(1 / temperature)))
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
         return self.vision_encoder(image)
@@ -180,7 +186,26 @@ class CLIP(nn.Module):
         Returns:
             TODO: think about the what values should be returned
         """
-        raise NotImplementedError("Not implemented")
+
+        encoder_dtype = next(self.vision_encoder.parameters()).dtype
+        pixel_values = pixel_values.to(dtype=encoder_dtype)
+        vision_outputs = self.encode_image(pixel_values)
+        text_outputs = self.text_encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        )
+
+        image_features = vision_outputs.last_hidden_state.mean(dim=1)
+        token_features = text_outputs.last_hidden_state
+        mask = attention_mask.unsqueeze(-1).to(dtype=token_features.dtype)
+        text_features = (token_features * mask).sum(dim=1)
+        text_features = text_features / mask.sum(dim=1).clamp(min=1)
+        vision_feature = F.normalize(self.vision_projection(image_features), dim=-1)
+        text_feature = F.normalize(self.text_projection(text_features), dim=-1)
+
+        logit_scale = self.logit_scale.exp()
+        logits = logit_scale * torch.matmul(vision_feature, text_feature.T)
+        return vision_feature, text_feature, logits
 
 
 def compute_clip_loss(
@@ -199,7 +224,12 @@ def compute_clip_loss(
     Returns:
         The loss for the CLIP model.
     """
-    raise NotImplementedError("Not implemented")
+
+    _, _, logits = outputs
+    targets = torch.arange(logits.shape[0], device=logits.device)
+    image_to_text_loss = F.cross_entropy(logits, targets)
+    text_to_image_loss = F.cross_entropy(logits.T, targets)
+    return (image_to_text_loss + text_to_image_loss) / 2
 
 
 def get_target_modules_for_lora(model: nn.Module) -> list[str]:
